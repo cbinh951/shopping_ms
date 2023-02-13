@@ -1,61 +1,56 @@
-const ShoppingService = require("../services/shopping-service");
-const { PublishCustomerEvent } = require("../utils");
+const { CUSTOMER_BINDING_KEY } = require('../config');
+const ShoppingService = require('../services/shopping-service');
+const {
+  PublishCustomerEvent,
+  SubscribeMessage,
+  PublishMessage,
+} = require('../utils');
 const UserAuth = require('./middlewares/auth');
 
-module.exports = (app) => {
-    
-    const service = new ShoppingService();
+module.exports = (app, channel) => {
+  const service = new ShoppingService();
 
-    app.post('/order',UserAuth, async (req,res,next) => {
+  SubscribeMessage(channel, service);
+  app.post('/order', UserAuth, async (req, res, next) => {
+    const { _id } = req.user;
+    const { txnNumber } = req.body;
 
-        const { _id } = req.user;
-        const { txnNumber } = req.body;
+    try {
+      const { data } = await service.PlaceOrder({ _id, txnNumber });
 
+      const payload = await service.GetOrderPayload(_id, data, 'CREATE_ORDER');
 
-        try {
-            const { data } = await service.PlaceOrder({_id, txnNumber});
+      //   PublishCustomerEvent(payload);
+      PublishMessage(channel, CUSTOMER_BINDING_KEY, JSON.stringify(payload));
 
+      return res.status(200).json(data);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-            const payload = await service.GetOrderPayload(_id, data, 'CREATE_ORDER');
+  app.get('/orders', UserAuth, async (req, res, next) => {
+    const { _id } = req.user;
 
-            PublishCustomerEvent(payload);
+    try {
+      const { data } = await service.GetOrders(_id);
 
-            return res.status(200).json(data);
-            
-        } catch (err) {
-            next(err)
-        }
+      return res.status(200).json(data);
+    } catch (err) {
+      next(err);
+    }
+  });
 
-    });
+  app.get('/cart', UserAuth, async (req, res, next) => {
+    console.log('voo');
+    const { _id } = req.user;
 
-    app.get('/orders',UserAuth, async (req,res,next) => {
+    try {
+      const { data } = await service.getCart({ _id });
 
-        const { _id } = req.user;
-
-        try {
-            const { data } = await service.GetOrders(_id);
-
-            return res.status(200).json(data);
-        } catch (err) {
-            next(err);
-        }
-
-    });
-
-    app.get('/cart', UserAuth, async(req,res,next) => {
-
-        const { _id } = req.user;
-
-        try {
-            
-            const { data } = await service.getCart({ _id });
-    
-            return res.status(200).json(data);
-            
-        } catch (err) {
-            throw err;
-        }
-    })
-       
-     
-}
+      return res.status(200).json(data);
+    } catch (err) {
+      throw err;
+    }
+  });
+};
